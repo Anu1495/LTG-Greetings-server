@@ -1,0 +1,292 @@
+[
+  {
+    "id": "2f15c305-ae8d-4379-bfa3-f2600d7e13da",
+    "direction": "outgoing",
+    "createdAt": "2025-12-21T18:36:34.593Z",
+    "body": {
+      "text": "Dear Marina,\n\nWelcome to Mercure London Hyde Park, our team is dedicated to ensuring that your experience is comfortable, enjoyable, and memorable.\n\nPlease do not hesitate to reach out to our team for any assistance or information you may need. Whether it's recommendations for local attractions, assistance with amenities, or any special requests, we are here to make your stay exceptional.\n\nWe look forward to making your 5 nights stay unforgettable.\n\nWarm regards,\nMercure London Hyde Park"
+    },
+    "raw": {
+      "id": "2f15c305-ae8d-4379-bfa3-f2600d7e13da",
+      "channelId": "80426faa-0430-4353-afb1-f12477500b89",
+      "sender": {
+        "connector": {
+          "id": "c3bdc3e5-d8fd-4879-8898-70d07df25162",
+          "identifierValue": "+447893989449"
+        }
+      },
+      "receiver": {
+        "contacts": [
+          {
+            "id": "d4cd0168-7a70-43d8-90f0-d28641f941ca",
+            "identifierKey": "phonenumber",
+            "identifierValue": "+34630929503",
+            "platformAddressSelector": "identifiers.phonenumber",
+            "platformAddress": "+34630929503",
+            "annotations": {
+              "name": "+34630929503"
+            },
+            "countryCode": "ES"
+          }
+        ]
+      },
+      "body": {
+        "type": "list",
+        "list": {
+          "text": "Dear Marina,\n\nWelcome to Mercure London Hyde Park, our team is dedicated to ensuring that your experience is comfortable, enjoyable, and memorable.\n\nPlease do not hesitate to reach out to our team for any assistance or information you may need. Whether it's recommendations for local attractions, assistance with amenities, or any special requests, we are here to make your stay exceptional.\n\nWe look forward to making your 5 nights stay unforgettable.\n\nWarm regards,\nMercure London Hyde Park",
+          "altText": "Reply STOP to unsubscribe.",
+          "actions": [
+            {
+              "type": "reply",
+              "reply": {
+                "text": "Table at Restaurant"
+              }
+            },
+            {
+              "type": "reply",
+              "reply": {
+                "text": "Bottle of Champagne"
+              }
+            },
+            {
+              "type": "reply",
+              "reply": {
+                "text": "A Bouquet "
+              }
+            },
+            {
+              "type": "reply",
+              "reply": {
+                "text": "Tap to Talk"
+              }
+            }
+          ]
+        }
+      },
+      "meta": {
+        "extraInformation": {
+          "chargeable_unit": "1",
+          "conversation_category": "marketing_lite",
+          "conversation_pricing_model": "PMP",
+          "cost_request_id": "2f15c305-ae8d-4379-bfa3-f2600d7e13da",
+          "phone_number": "+44 7893 989449",
+          "recipient_id": "34630929503",
+          "timestamp": "1766345766",
+          "use_wa_platform_account_id_approach": "true",
+          "waba_id": "210145732192770"
+        }
+      },
+      "template": {
+        "projectId": "5f775de5-a241-4662-8acd-6fe20817f3d3",
+        "version": "3dde4ec8-0d05-4ada-8511-b515b3bad8e6",
+        "name": "mlhp_",
+        "locale": "en",
+        "variables": {
+          "firstname": "Marina",
+          "hotel": "Mercure London Hyde Park",
+          "nights": "5",
+          "room_number": "108"
+        },
+        "shortLinks": {
+          "enabled": true,
+          "domain": "default"
+        },
+        "parameters": null
+      },
+      "reference": "",
+      "parts": [
+        {
+          "platformReference": "wamid.HBgLMzQ2MzA5Mjk1MDMVAgARGBJEMEJEMTEyOTQyMjFDNjgwNzYA"
+        }
+      ],
+      "status": "delivered",
+      "reason": "",
+      "direction": "outgoing",
+      "context": {},
+      "chargeableUnits": 1,
+      "lastStatusAt": "2025-12-21T19:36:08.956Z",
+      "createdAt": "2025-12-21T18:36:34.593Z",
+      "updatedAt": "2025-12-21T19:36:08.956Z",
+      "batchId": null
+    }
+  },
+  {
+    "id": "3aad55cf-2459-4be3-91ed-ebdf96a32688",
+    "direction": "incoming",
+    "createdAt": "2025-12-21T20:36:45.766Z",
+    "body": {
+      "text": "Thank you!"
+    },
+    "raw": {
+      "id": "3aad55cf-2459-4be3-91ed-ebdf96a32688",
+      "channelId": "80426faa-0430-4353-afb1-f12477500b89",
+      "sender": {
+        "contact": {
+          "id": "d4cd0168-7a70-43d8-90f0-d28641f941ca",
+          "identifierKey": "phonenumber",
+          "identifierValue": "+34630929503",
+          "platformAddressSelector": "identifiers.phonenumber",
+          "platformAddress": "+34630929503",
+          "annotations": {
+            "name": "Marina Arias"
+          }
+        }
+      },
+      "receiver": {
+        "connector": {
+          "id": "c3bdc3e5-d8fd-4879-8898-70d07df25162",
+          "identifierValue": "+447893989449"
+        }
+      },
+      "body": {
+        "type": "text",
+        "text": {
+          "text": "Thank you!"
+        }
+      },
+      "meta": {
+        "extraInformation": {
+          "timestamp": "1766349403",
+          "user_locale": "es-ES"
+        }
+      },
+      "reference": "",
+      "parts": [
+        {
+          "platformReference": "wamid.HBgLMzQ2MzA5Mjk1MDMVAgASGBQzQTdGRDA5REU3NTg4NDAyMzY0MwA="
+        }
+      ],
+      "status": "delivered",
+      "reason": "",
+      "direction": "incoming",
+      "context": {},
+      "chargeableUnits": 1,
+      "lastStatusAt": "2025-12-21T20:36:46.023Z",
+      "createdAt": "2025-12-21T20:36:45.766Z",
+      "updatedAt": "2025-12-21T20:36:46.023Z",
+      "batchId": null
+    }
+  },
+  {
+    "id": "8b7d4e9e-630d-4022-977b-02a4f0ca933d",
+    "direction": "incoming",
+    "createdAt": "2025-12-21T21:22:54.569Z",
+    "body": {
+      "image": {
+        "url": "https://media.api.bird.com/workspaces/b4570c5b-32fc-48d8-a9c2-8d500638de7e/messages/8b7d4e9e-630d-4022-977b-02a4f0ca933d/media/849647a7-a999-47fc-9bb2-09ac772f1424",
+        "text": ""
+      }
+    },
+    "raw": {
+      "id": "8b7d4e9e-630d-4022-977b-02a4f0ca933d",
+      "channelId": "80426faa-0430-4353-afb1-f12477500b89",
+      "sender": {
+        "contact": {
+          "id": "d4cd0168-7a70-43d8-90f0-d28641f941ca",
+          "identifierKey": "phonenumber",
+          "identifierValue": "+34630929503",
+          "platformAddressSelector": "identifiers.phonenumber",
+          "platformAddress": "+34630929503",
+          "annotations": {
+            "name": "Marina Arias"
+          }
+        }
+      },
+      "receiver": {
+        "connector": {
+          "id": "c3bdc3e5-d8fd-4879-8898-70d07df25162",
+          "identifierValue": "+447893989449"
+        }
+      },
+      "body": {
+        "type": "image",
+        "image": {
+          "images": [
+            {
+              "mediaUrl": "https://media.api.bird.com/workspaces/b4570c5b-32fc-48d8-a9c2-8d500638de7e/messages/8b7d4e9e-630d-4022-977b-02a4f0ca933d/media/849647a7-a999-47fc-9bb2-09ac772f1424"
+            }
+          ]
+        }
+      },
+      "meta": {
+        "extraInformation": {
+          "timestamp": "1766352166",
+          "user_locale": "es-ES",
+          "whatsapp.media.type": "image"
+        }
+      },
+      "reference": "",
+      "parts": [
+        {
+          "platformReference": "wamid.HBgLMzQ2MzA5Mjk1MDMVAgASGBQzQUZERjE1NTYyN0UzRUIxMUVGRAA="
+        }
+      ],
+      "status": "delivered",
+      "reason": "",
+      "direction": "incoming",
+      "context": {},
+      "chargeableUnits": 1,
+      "lastStatusAt": "2025-12-21T21:22:54.658Z",
+      "createdAt": "2025-12-21T21:22:54.569Z",
+      "updatedAt": "2025-12-21T21:22:54.658Z",
+      "batchId": null
+    }
+  },
+  {
+    "id": "55b6553e-aec1-4f05-a33e-07a000b51069",
+    "direction": "incoming",
+    "createdAt": "2025-12-21T21:24:02.563Z",
+    "body": {
+      "text": "Excuse me, it seems the air conditioner doesn’t work. The room is too cold and there is no heat"
+    },
+    "raw": {
+      "id": "55b6553e-aec1-4f05-a33e-07a000b51069",
+      "channelId": "80426faa-0430-4353-afb1-f12477500b89",
+      "sender": {
+        "contact": {
+          "id": "d4cd0168-7a70-43d8-90f0-d28641f941ca",
+          "identifierKey": "phonenumber",
+          "identifierValue": "+34630929503",
+          "platformAddressSelector": "identifiers.phonenumber",
+          "platformAddress": "+34630929503",
+          "annotations": {
+            "name": "Marina Arias"
+          }
+        }
+      },
+      "receiver": {
+        "connector": {
+          "id": "c3bdc3e5-d8fd-4879-8898-70d07df25162",
+          "identifierValue": "+447893989449"
+        }
+      },
+      "body": {
+        "type": "text",
+        "text": {
+          "text": "Excuse me, it seems the air conditioner doesn’t work. The room is too cold and there is no heat"
+        }
+      },
+      "meta": {
+        "extraInformation": {
+          "timestamp": "1766352239",
+          "user_locale": "es-ES"
+        }
+      },
+      "reference": "",
+      "parts": [
+        {
+          "platformReference": "wamid.HBgLMzQ2MzA5Mjk1MDMVAgASGBQzQUM2NUZBNDBCRjY2MzRFMjBBNgA="
+        }
+      ],
+      "status": "delivered",
+      "reason": "",
+      "direction": "incoming",
+      "context": {},
+      "chargeableUnits": 1,
+      "lastStatusAt": "2025-12-21T21:24:02.662Z",
+      "createdAt": "2025-12-21T21:24:02.563Z",
+      "updatedAt": "2025-12-21T21:24:02.662Z",
+      "batchId": null
+    }
+  }
+]
