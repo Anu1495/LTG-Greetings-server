@@ -32,12 +32,18 @@ jobs:
           node-version: '18'
 
       - name: Install dependencies
-        run: npm ci
-        working-directory: ${{ steps.detect.outputs.package_path }}
+        run: |
+          if [ -d "./server" ]; then
+            cd server
+          fi
+          npm ci
 
       - name: Build (if present)
-        run: npm run build --if-present
-        working-directory: ${{ steps.detect.outputs.package_path }}
+        run: |
+          if [ -d "./server" ]; then
+            cd server
+          fi
+          npm run build --if-present
 
       - name: Azure Login
         uses: azure/login@v1
