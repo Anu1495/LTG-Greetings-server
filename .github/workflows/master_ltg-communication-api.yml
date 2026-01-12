@@ -17,18 +17,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Detect package path
+        id: detect
+        run: |
+          if [ -d "./server" ]; then
+            echo "package_path=./server" >> $GITHUB_OUTPUT
+          else
+            echo "package_path=." >> $GITHUB_OUTPUT
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      - name: Install dependencies (server)
+      - name: Install dependencies
         run: npm ci
-        working-directory: ./server
+        working-directory: ${{ steps.detect.outputs.package_path }}
 
-      - name: Build (server)
+      - name: Build (if present)
         run: npm run build --if-present
-        working-directory: ./server
+        working-directory: ${{ steps.detect.outputs.package_path }}
 
       - name: Azure Login
         uses: azure/login@v1
@@ -39,4 +48,4 @@ jobs:
         uses: azure/webapps-deploy@v2
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
-          package: ./server
+          package: ${{ steps.detect.outputs.package_path }}
