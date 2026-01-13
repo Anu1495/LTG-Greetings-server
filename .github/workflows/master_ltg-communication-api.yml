@@ -1,6 +1,6 @@
 # Build and deploy LTG server to Azure Web App
 # Requirements:
-# - Add GitHub secret `AZURE_CREDENTIALS` (service principal JSON)
+# - Add GitHub secret `AZURE_PUBLISH_PROFILE` (publish profile XML)
 # - Add GitHub secret `AZURE_WEBAPP_NAME` (App Service name)
 # - Optionally add `AZURE_STORAGE_CONNECTION_STRING` as a secret for app runtime
 
@@ -27,7 +27,7 @@ jobs:
           fi
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
           node-version: '18'
 
@@ -44,6 +44,11 @@ jobs:
             cd server
           fi
           npm run build --if-present
+
+      - name: Azure login (service principal)
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy to Azure Web App (publish-profile)
         uses: azure/webapps-deploy@v2
