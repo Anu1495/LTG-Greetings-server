@@ -1,6 +1,3 @@
-Here's the complete code with the checkout date filtering added without damaging any existing functions. I've added the helper function and modified the filtering logic:
-
-```javascript
 const express = require('express')
 const fs = require('fs')
 const path = require('path')
@@ -53,12 +50,39 @@ function hasCheckoutPassed(checkoutDate) {
   }
   
   try {
-    // Try to parse the date
-    const checkout = new Date(checkoutDate);
+    // Try to parse the date - handle various formats
+    let dateObj;
+    const dateStr = checkoutDate.toString().trim();
+    
+    // Try DD.MM.YYYY format (European format from your data)
+    if (dateStr.match(/^\d{1,2}\.\d{1,2}\.\d{4}$/)) {
+      const parts = dateStr.split('.');
+      // DD.MM.YYYY -> YYYY-MM-DD for Date parsing
+      dateObj = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+    }
+    // Try YYYY-MM-DD format
+    else if (dateStr.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+      dateObj = new Date(dateStr);
+    }
+    // Try MM/DD/YYYY format
+    else if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+      dateObj = new Date(dateStr);
+    }
+    // Try any other format that Date can parse
+    else {
+      dateObj = new Date(dateStr);
+    }
+    
+    // If we couldn't parse the date, treat as not checked out
+    if (isNaN(dateObj.getTime())) {
+      console.warn('Failed to parse checkout date:', checkoutDate);
+      return false;
+    }
+    
     const today = new Date();
     
-    // Reset times to compare just dates
-    const checkoutDateOnly = new Date(checkout.getFullYear(), checkout.getMonth(), checkout.getDate());
+    // Reset times to compare just dates (set both to midnight)
+    const checkoutDateOnly = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
     const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     
     return checkoutDateOnly < todayDateOnly;
@@ -1095,24 +1119,32 @@ app.get('/api/guests', (req,res)=>{
 
     // remove guests who have already checked out based on CSV fields
     if (!includeCheckedOut) {
-      const now = new Date()
       final = final.filter(g => {
         try {
-          // Check using the helper function
-          if (g.checkoutDate && hasCheckoutPassed(g.checkoutDate)) {
-            return false;
+          // Debug logging to see what we're checking
+          const phone = g.identifierValue || ''
+          const norm = phone.toString().replace(/\D/g,'')
+          
+          // Check direct checkoutDate field
+          if (g.checkoutDate) {
+            const passed = hasCheckoutPassed(g.checkoutDate)
+            if (passed) {
+              console.log(`[checkout-filter] Filtered ${g.firstName} ${g.lastName} (${phone}) - checkout date: ${g.checkoutDate} has passed`)
+              return false
+            }
           }
           
           // Also check the old "availableIn" field
           if(g.availableIn){
             // try to extract a number of days; if numeric and <= 0, treat as checked-out
             const n = parseInt(String(g.availableIn).replace(/[^0-9\-]/g,''), 10)
-            if(!isNaN(n) && n <= 0) return false
+            if(!isNaN(n) && n <= 0) {
+              console.log(`[checkout-filter] Filtered ${g.firstName} ${g.lastName} (${phone}) - availableIn: ${g.availableIn}`)
+              return false
+            }
           }
           
           // Check persistent phone map for checkout date
-          const phone = g.identifierValue || ''
-          const norm = phone.toString().replace(/\D/g,'')
           if(norm && persistentPhoneMap[norm]){
             const mapping = persistentPhoneMap[norm]
             let checkoutFromMap = null
@@ -1120,6 +1152,7 @@ app.get('/api/guests', (req,res)=>{
               checkoutFromMap = mapping.checkoutDate
             }
             if(checkoutFromMap && hasCheckoutPassed(checkoutFromMap)){
+              console.log(`[checkout-filter] Filtered ${g.firstName} ${g.lastName} (${phone}) - phone map checkout: ${checkoutFromMap} has passed`)
               return false
             }
           }
@@ -1333,3 +1366,427 @@ app.get('/api/azure-archive-status', async (req,res)=>{
   }catch(e){
     console.error('azure status error', e)
     return res.status(500).json({ error: String(e) })
+  }
+})
+
+// List recent archived blobs (optional limit)
+app.get('/api/azure-archives', async (req,res)=>{
+  try{
+    if(!azureAvailable) return res.status(500).json({ error: 'azure sdk unavailable' })
+    const limit = parseInt(req.query.limit||'50',10)
+    const containerName = 'instay-archives'
+    const serviceClient = BlobServiceClient.fromConnectionString(AZURE_CONN)
+    const containerClient = serviceClient.getContainerClient(containerName)
+    const items = []
+    for await (const blob of containerClient.listBlobsFlat()){
+      items.push({ name: blob.name, size: blob.properties && blob.properties.contentLength, lastModified: blob.properties && blob.properties.lastModified })
+      if(items.length >= limit) break
+    }
+    return res.json({ container: containerName, items })
+  }catch(e){
+    console.error('azure list error', e)
+    return res.status(500).json({ error: String(e) })
+  }
+})
+
+// SSE endpoint: streams new messages as Bird messages arrive
+app.get('/api/stream', (req,res)=>{
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive'
+  })
+  res.write('\n')
+  sseClients.add(res)
+  // send a ping to keep connection alive every 20s
+  const keep = setInterval(()=>{ try{ res.write('event: ping\ndata: {}\n\n') }catch(e){} }, 20000)
+  // when client disconnects
+  req.on('close', ()=>{
+    clearInterval(keep)
+    sseClients.delete(res)
+  })
+  // immediately attempt to broadcast any new messages
+  // poller will broadcast new messages in background
+})
+
+// Get recent messages and filter by phone
+app.get('/api/messages', async (req,res)=>{
+  const phone = req.query.phone
+  if(!phone) return res.json([])
+  const url = `https://api.bird.com/workspaces/${WORKSPACE}/channels/${CHANNEL}/messages?limit=500`
+  try{
+    const r = await fetch(url, { headers: { Authorization: `AccessKey ${BIRD_API_KEY}`, Accept: 'application/json' } })
+    const j = await r.json()
+    const results = j.results||[]
+    const filtered = results.filter(m=>{
+      try{
+        const rcv = m.receiver && m.receiver.contacts && m.receiver.contacts[0] && m.receiver.contacts[0].identifierValue
+        const snd = m.sender && m.sender.contact && m.sender.contact.identifierValue
+        return [rcv,snd].includes(phone)
+      }catch(e){return false}
+    })
+
+    // Normalize messages for the UI
+    const normalized = filtered.map(m=>{
+      let text = ''
+      let image = null
+      let audio = null
+      if(m.body){
+        if(m.body.text && m.body.text.text) text = m.body.text.text
+        else if(m.body.list && m.body.list.text) text = m.body.list.text
+        else if(m.body.image){
+          if(m.body.image.text) text = m.body.image.text
+          const url = m.body.image.url || m.body.image.src
+            || (m.body.image.media && m.body.image.media[0] && (m.body.image.media[0].url || m.body.image.media[0].mediaUrl))
+            || m.body.image.mediaUrl
+            || (m.body.image.images && m.body.image.images[0] && (m.body.image.images[0].mediaUrl || m.body.image.images[0].url || m.body.image.images[0].src))
+          if(url){
+            const lower = String(url||'').toLowerCase()
+            // If URL looks like audio, treat it as audio rather than image
+            if(/\.m4a$|\.mp3$|\.wav$|\.ogg$|audio\//.test(lower)){
+              audio = { url, text: text || '' }
+            } else {
+              image = { url, text: text || '' }
+            }
+          }
+        } else if(m.body.file || m.body.audio){
+          // handle file/audio bodies (voice notes, attachments)
+          try{
+            const f = m.body.audio || m.body.file || {}
+            if(f.text) text = f.text
+            // also support Bird's file.files array shape (files: [{ mediaUrl, contentType }])
+            const url = f.url || f.src
+              || (f.media && f.media[0] && (f.media[0].url || f.media[0].mediaUrl))
+              || f.mediaUrl
+              || (f.files && f.files[0] && (f.files[0].mediaUrl || f.files[0].url || f.files[0].src))
+              || null
+            if(url){
+              const lower = String(url||'').toLowerCase()
+              if(/\.m4a$|\.mp3$|\.wav$|\.ogg$|audio\//.test(lower) || (f.mime && String(f.mime||'').toLowerCase().startsWith('audio')) || (f.files && f.files[0] && f.files[0].contentType && String(f.files[0].contentType||'').toLowerCase().startsWith('audio'))){
+                audio = { url, text: text || '' }
+              }
+            }
+          }catch(e){ /* ignore */ }
+        } else text = JSON.stringify(m.body)
+      }
+      const deliveryStatus = m.status || m.deliveryStatus || (m.failure ? 'failed' : null)
+      const deliveryReason = (m.failure && m.failure.description) || m.deliveryReason || null
+      const bodyObj = image ? { image } : audio ? { audio } : { text }
+      if(image && image.url){
+        try{ bodyObj.image.proxyUrl = '/api/proxy-media?url=' + encodeURIComponent(image.url) }catch(e){}
+      }
+      if(audio && audio.url){
+        try{ bodyObj.audio = bodyObj.audio || audio; bodyObj.audio.proxyUrl = '/api/proxy-media?url=' + encodeURIComponent(audio.url) }catch(e){}
+      }
+      // Fallback: Bird sometimes nests files under top-level `file` or under `body.type==='file'`
+      if(!image && !audio){
+        try{
+          const topFile = m.file || (m.body && m.body.file) || (m.body && m.body.type === 'file' && m.body.file) || null
+          if(topFile){
+            const candidate = (topFile.files && topFile.files[0]) || (topFile.media && topFile.media[0]) || null
+            const url = candidate && (candidate.mediaUrl || candidate.url || candidate.src) || null
+            const contentType = candidate && (candidate.contentType || candidate.mime || '') || ''
+            if(url){
+              const lower = String(url||'').toLowerCase() + String(contentType||'').toLowerCase()
+              if(/\.m4a$|\.mp3$|\.wav$|\.ogg$|audio\//.test(lower)){
+                audio = { url, text: text || '' }
+              } else {
+                image = { url, text: text || '' }
+              }
+              if(audio && audio.url){ try{ bodyObj.audio = bodyObj.audio || audio; bodyObj.audio.proxyUrl = '/api/proxy-media?url=' + encodeURIComponent(audio.url) }catch(e){} }
+              if(image && image.url){ try{ bodyObj.image = bodyObj.image || image; bodyObj.image.proxyUrl = '/api/proxy-media?url=' + encodeURIComponent(image.url) }catch(e){} }
+            }
+          }
+        }catch(e){}
+      }
+      return {
+        id: m.id,
+        direction: m.direction || (m.sender && m.sender.connector ? 'outgoing' : 'incoming'),
+        createdAt: m.createdAt,
+        body: bodyObj,
+        raw: m,
+        deliveryStatus,
+        deliveryReason
+      }
+    }).sort((a,b)=> new Date(a.createdAt) - new Date(b.createdAt))
+
+    // Deduplicate messages by direction + normalized body/template name.
+    // Normalize body text (lowercase, collapse whitespace, strip punctuation)
+    // and keep only the first occurrence (earliest) to collapse repeated
+    // template sends.
+    const deduped = []
+    const seen = new Set()
+    const normalizeBody = (s) => {
+      try{
+        return String(s||'').toLowerCase().replace(/\s+/g,' ').replace(/["'`\.,\-\:\;\(\)\[\]\{\}\!\?]/g,'').trim()
+      }catch(e){ return String(s||'').toLowerCase().trim() }
+    }
+    for(const m of normalized){
+      try{
+        const tmpl = m.raw && m.raw.template && m.raw.template.name ? String(m.raw.template.name).toLowerCase() : null
+        const bodyText = (m.body && (m.body.text || (m.body.image && m.body.image.text) || (m.body.audio && m.body.audio.text) || (m.body.file && m.body.file.text))) ? String(m.body.text || (m.body.image && m.body.image.text) || (m.body.audio && m.body.audio.text) || (m.body.file && m.body.file.text) || '') : ''
+        const normBody = normalizeBody(bodyText).slice(0,200)
+        const sigBase = tmpl ? ('t:' + tmpl) : ('b:' + normBody)
+        const sig = (m.direction||'') + '|' + sigBase
+        if(seen.has(sig)) continue
+        seen.add(sig)
+        deduped.push(m)
+      }catch(e){ deduped.push(m) }
+    }
+
+    res.json(deduped)
+  }catch(err){
+    res.status(500).json({error: String(err)})
+  }
+})
+
+// Upload an image/file and return a URL
+app.post('/api/upload-image', upload.single('file'), (req, res) => {
+  try{
+    if(!req.file) return res.status(400).json({ error: 'file required' })
+    const url = `${req.protocol}://${req.get('host')}/uploads/${encodeURIComponent(req.file.filename)}`
+    return res.json({ url })
+  }catch(e){
+    console.error('upload error', e)
+    return res.status(500).json({ error: String(e) })
+  }
+})
+
+// Proxy media from Bird to avoid CORS/private media issues
+app.get('/api/proxy-media', async (req, res) => {
+  const url = req.query.url
+  if(!url) return res.status(400).json({ error: 'url query required' })
+  try{
+    const parsed = new URL(url)
+    const allowedHosts = ['media.api.bird.com']
+    if(!allowedHosts.includes(parsed.hostname)) return res.status(403).json({ error: 'forbidden host' })
+
+    // derive a stable filename based on the url
+    const hash = crypto.createHash('sha256').update(url).digest('hex')
+    // try to preserve extension from path
+    const extMatch = parsed.pathname.match(/\.([a-zA-Z0-9]{2,6})(?:\?|$)/)
+    const ext = extMatch ? ('.' + extMatch[1]) : ''
+    const filename = `${hash}${ext}`
+    const filepath = path.join(uploadsDir, filename)
+
+    if(fs.existsSync(filepath)){
+      // serve cached file bytes
+      const stat = fs.statSync(filepath)
+      const contentType = require('mime-types').lookup(filepath) || 'application/octet-stream'
+      res.setHeader('Content-Type', contentType)
+      res.setHeader('Content-Length', stat.size)
+      const stream = fs.createReadStream(filepath)
+      return stream.pipe(res)
+    }
+
+    const r = await fetch(url, { headers: { Authorization: BIRD_API_KEY ? `AccessKey ${BIRD_API_KEY}` : undefined } })
+    if(!r.ok) return res.status(502).json({ error: 'failed to fetch remote media', status: r.status })
+
+    // determine extension from content-type if not present
+    let remoteContentType = (r.headers && r.headers.get) ? r.headers.get('content-type') : null
+    let finalExt = ext
+    if(!finalExt && remoteContentType){
+      const map = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp' }
+      if(map[remoteContentType]) finalExt = map[remoteContentType]
+    }
+    const finalFilename = finalExt && !filename.endsWith(finalExt) ? (hash + finalExt) : filename
+    const finalPath = path.join(uploadsDir, finalFilename)
+
+    const ab = await r.arrayBuffer()
+    const buf = Buffer.from(ab)
+    fs.writeFileSync(finalPath, buf)
+    const stat = fs.statSync(finalPath)
+    const contentType = require('mime-types').lookup(finalPath) || 'application/octet-stream'
+    res.setHeader('Content-Type', contentType)
+    res.setHeader('Content-Length', stat.size)
+    const stream = fs.createReadStream(finalPath)
+    return stream.pipe(res)
+  }catch(e){
+    console.error('proxy-media error', e)
+    return res.status(500).json({ error: String(e) })
+  }
+})
+
+// Send a plain text reply (wraps Bird payload used earlier)
+app.post('/api/messages', async (req,res)=>{
+  const { phone, text, imageUrl } = req.body
+  if(!phone) return res.status(400).json({error:'phone required'})
+  if(!text && !imageUrl) return res.status(400).json({error: 'text or imageUrl required'})
+  const templateName = req.body.templateName || null
+  // Prevent duplicate template/text sends: check recent messages for this phone
+  try{
+    // Strict block: if this is a template send and the phone is already in
+    // the persistent sent-template blocklist, reject immediately.
+    if(templateName){
+      try{
+        const norm = (phone||'').toString().replace(/\D/g,'')
+        if(norm && sentTemplateBlocklist.has(norm)){
+          console.log(`[send-blocklist] blocked attempt to send template=${templateName} to ${phone}`)
+          return res.status(409).json({ error: 'template_already_sent', message: 'A template has already been sent to this number; further template sends are blocked.' })
+        }
+      }catch(e){/* ignore blocklist check errors */}
+    }
+    if(BIRD_API_KEY && WORKSPACE && CHANNEL){
+      const recent = await fetchBirdMessages()
+      const phoneNorm = (phone||'').toString().replace(/\D/g,'')
+      const normalizeText = s => String(s||'').toString().trim().replace(/\s+/g,' ')
+      const normalizeBody = s => String(s||'').toLowerCase().replace(/\s+/g,' ').replace(/["'`\.,\-\:\;\(\)\[\]\{\}\!\?]/g,'').trim()
+      const same = recent.filter(m=>{
+        try{
+          const rcv = (m.receiver && m.receiver.contacts && m.receiver.contacts[0] && m.receiver.contacts[0].identifierValue) || ''
+          const snd = (m.sender && m.sender.contact && m.sender.contact.identifierValue) || ''
+          const rcvNorm = (rcv||'').toString().replace(/\D/g,'')
+          const sndNorm = (snd||'').toString().replace(/\D/g,'')
+          if(rcvNorm !== phoneNorm && sndNorm !== phoneNorm) return false
+          const dir = m.direction || ((m.sender && m.sender.connector) ? 'outgoing' : 'incoming')
+          // consider only outgoing (messages we sent)
+          if(dir !== 'outgoing') return false
+          // if templateName provided, prefer matching template names (case-insensitive)
+          if(templateName && m.template && m.template.name && String(m.template.name).toLowerCase() === String(templateName).toLowerCase()) return true
+          // otherwise compare normalized text bodies within recent timeframe (24 hours)
+          const bodyText = (m.body && (m.body.text && m.body.text.text)) || (m.body && m.body.list && m.body.list.text) || (m.body && m.body.image && m.body.image.text) || ''
+          if(text && bodyText){
+            const a = normalizeBody(bodyText)
+            const b = normalizeBody(text)
+            if(a && b && a === b){
+              const ageMs = Date.now() - (new Date(m.createdAt).getTime() || 0)
+              if(ageMs >= 0 && ageMs <= (24*60*60*1000)) return true
+            }
+          }
+          return false
+        }catch(e){return false}
+      })
+      if(same && same.length){
+        console.log(`[send-guard] duplicate prevented phone=${phone} template=${templateName||''} matches=${same.length}`)
+        return res.status(409).json({ error: 'duplicate_message_detected', message: 'A similar message/template was recently sent to this number' })
+      }
+    }
+  }catch(e){ /* ignore duplication-check failures */ }
+  let payload = { receiver: { contacts: [{ identifierValue: phone }] } }
+  if(imageUrl){
+    payload.body = { type: 'image', image: { url: imageUrl, text: text || '' } }
+  } else {
+    payload.body = { type: 'text', text: { text } }
+  }
+  const url = `https://api.bird.com/workspaces/${WORKSPACE}/channels/${CHANNEL}/messages`
+  try{
+    const r = await fetch(url, { method:'POST', headers: { Authorization: `AccessKey ${BIRD_API_KEY}`, 'Content-Type':'application/json' }, body: JSON.stringify(payload) })
+    // Try to parse JSON response from Bird, fall back to text
+    let parsed = null
+    try{
+      parsed = await r.json()
+    }catch(e){
+      try{ parsed = await r.text() }catch(e2){ parsed = null }
+    }
+    // If we sent a template, persist the phone in the blocklist to prevent
+    // any future template sends to the same number (strict blocking requirement).
+    try{
+      if(templateName && r && r.status && (r.status >= 200 && r.status < 300)){
+        const norm = (phone||'').toString().replace(/\D/g,'')
+        if(norm){
+          sentTemplateBlocklist.add(norm)
+          saveSentTemplateBlocklist()
+          console.log(`[send-blocklist] added ${norm} after successful template send ${templateName}`)
+        }
+      }
+    }catch(e){ /* ignore blocklist persistence errors */ }
+
+    // After sending, the background poller will pick up and broadcast any new messages.
+    if(parsed && typeof parsed === 'object') return res.status(r.status).json(parsed)
+    return res.status(r.status).send(parsed)
+  }catch(e){
+    return res.status(500).json({error: String(e)})
+  }
+})
+
+// Suggest reply using AI (OpenAI if configured, otherwise simple heuristic)
+app.post('/api/suggest', async (req, res) => {
+  const { phone, limit = 6, tone = 'friendly', mode = 'reply' } = req.body || {}
+  if(!phone) return res.status(400).json({ error: 'phone required' })
+  try{
+    // fetch recent bird messages and filter by phone
+    const url = `https://api.bird.com/workspaces/${WORKSPACE}/channels/${CHANNEL}/messages?limit=500`
+    const r = await fetch(url, { headers: { Authorization: `AccessKey ${BIRD_API_KEY}`, Accept: 'application/json' } })
+    const j = await r.json()
+    const results = (j.results || []).filter(m=>{
+      try{
+        const rcv = m.receiver && m.receiver.contacts && m.receiver.contacts[0] && m.receiver.contacts[0].identifierValue
+        const snd = m.sender && m.sender.contact && m.sender.contact.identifierValue
+        return [rcv,snd].includes(phone)
+      }catch(e){return false}
+    }).sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt)).slice(0, limit)
+
+    const convo = results.slice().reverse().map(m=>{
+      const who = (m.direction||'incoming').toString() === 'incoming' ? 'guest' : 'you'
+      const body = (m.body && ((m.body.text && m.body.text.text) || (m.body.list && m.body.list.text))) || ''
+      return `${who}: ${body}`
+    }).join('\n')
+
+    // If OpenAI key present, call completions
+    const OPENAI_KEY = process.env.OPENAI_API_KEY
+    if(OPENAI_KEY){
+      // find the last guest incoming message
+      const lastGuestMsg = results.find(m=> (m.direction||'incoming') === 'incoming')
+      const lastGuestText = lastGuestMsg ? ((lastGuestMsg.body && ((lastGuestMsg.body.text && lastGuestMsg.body.text.text) || (lastGuestMsg.body.list && lastGuestMsg.body.list.text))) || '') : ''
+
+      if(mode === 'paraphrase'){
+        // prompt to produce paraphrases of the guest's last message
+        const sys = `You are an assistant that rewrites customer messages into alternative phrasings suitable for a hotel agent to echo back. Produce exactly 3 short paraphrases of the guest's LAST MESSAGE. Return a JSON object only with key \"suggestions\" -> array of strings.`
+        const userPrompt = `Last guest message:\n"${lastGuestText}"\n\nReturn 3 different ways to rephrase this message for clarity or confirmation.`
+        const messagesPayload = [ { role: 'system', content: sys }, { role: 'user', content: userPrompt } ]
+        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type':'application/json', Authorization: `Bearer ${OPENAI_KEY}` },
+          body: JSON.stringify({ model: 'gpt-3.5-turbo', messages: messagesPayload, max_tokens: 300, temperature: 0.6 })
+        })
+        const body = await resp.json()
+        const txt = body && body.choices && body.choices[0] && body.choices[0].message && body.choices[0].message.content
+        if(txt){
+          try{ const parsed = JSON.parse(txt); if(parsed && Array.isArray(parsed.suggestions)) return res.json({ suggestions: parsed.suggestions.slice(0,3) }) }catch(e){}
+          const m = txt.match(/\{[\s\S]*\}/)
+          if(m){ try{ const parsed = JSON.parse(m[0]); if(parsed && Array.isArray(parsed.suggestions)) return res.json({ suggestions: parsed.suggestions.slice(0,3) }) }catch(e2){} }
+          const lines = txt.split(/\n+/).map(s=>s.replace(/^\d+\.?\s*/, '').trim()).filter(Boolean)
+          if(lines.length) return res.json({ suggestions: lines.slice(0,3) })
+        }
+      }
+
+      // default mode: generate replies as before
+      // try to detect guest name from messages
+      let guestName = ''
+      for(const m of results){
+        const gname = (m && m.template && m.template.variables && (m.template.variables.firstname || m.template.variables.first_name)) || (m && m.receiver && m.receiver.contacts && m.receiver.contacts[0] && m.receiver.contacts[0].annotations && m.receiver.contacts[0].annotations.name) || null
+        if(gname){ guestName = String(gname).trim(); break }
+      }
+      const sys = `You are a professional hotel front-desk customer service assistant. Read the conversation and produce exactly 3 short, polite reply suggestions tailored to the guest. Be concise, helpful, and maintain a friendly professional tone. Return a JSON object only, with a single key \"suggestions\" whose value is an array of strings. Do not include any extra text.`
+      const userPrompt = `Guest name: ${guestName || 'Guest'}\nConversation:\n${convo}\n\nProvide 3 reply suggestions as a JSON object.`
+      const messages = [ { role: 'system', content: sys }, { role: 'user', content: userPrompt } ]
+      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', Authorization: `Bearer ${OPENAI_KEY}` },
+        body: JSON.stringify({ model: 'gpt-3.5-turbo', messages, max_tokens: 300, temperature: 0.6 })
+      })
+      const body = await resp.json()
+      const txt = body && body.choices && body.choices[0] && body.choices[0].message && body.choices[0].message.content
+      if(txt){
+        try{ const parsed = JSON.parse(txt); if(parsed && Array.isArray(parsed.suggestions)) return res.json({ suggestions: parsed.suggestions.slice(0,3) }) }catch(e){}
+        const m = txt.match(/\{[\s\S]*\}/)
+        if(m){ try{ const parsed = JSON.parse(m[0]); if(parsed && Array.isArray(parsed.suggestions)) return res.json({ suggestions: parsed.suggestions.slice(0,3) }) }catch(e2){} }
+        const lines = txt.split(/\n+/).map(s=>s.replace(/^\d+\.?\s*/, '').trim()).filter(Boolean)
+        if(lines.length) return res.json({ suggestions: lines.slice(0,3) })
+      }
+    }
+
+    // Fallback heuristic: echo short acknowledgement + ask a question
+    const lastGuest = results.find(m=> (m.direction||'incoming') === 'incoming')
+    const lastText = lastGuest ? ((lastGuest.body && ((lastGuest.body.text && lastGuest.body.text.text) || (lastGuest.body.list && lastGuest.body.list.text))) || '') : ''
+    const suggestion1 = `Hi, thanks for your message. ${ lastText ? 'We received: "' + (lastText.length>80? lastText.slice(0,77)+'...': lastText) + '".' : '' } How can I help?`
+    const suggestion2 = `Hello, thanks for reaching out. I'll check and get back to you shortly.`
+    return res.json({ suggestions: [suggestion1, suggestion2] })
+  }catch(err){
+    console.error('suggest error', err)
+    return res.status(500).json({ error: String(err) })
+  }
+})
+
+const PORT = process.env.PORT || 4000
+app.listen(PORT, ()=>console.log('Server running on',PORT))
