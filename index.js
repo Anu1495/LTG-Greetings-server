@@ -728,6 +728,53 @@ function extractNameFromMessage(m){
   return null
 }
 
+// Parse a variety of human-friendly checkout date formats into a Date object.
+// Returns a Date or null if parsing fails.
+function parseCheckoutDate(s){
+  try{
+    if(!s) return null
+    const raw = String(s).trim()
+    // try native parse first
+    const d0 = new Date(raw)
+    if(!isNaN(d0)) return d0
+    // common formats like 14-JAN-26 or 14-JAN-2026
+    const mnames = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,sept:8,oct:9,nov:10,dec:11 }
+    const m = raw.match(/^(\d{1,2})[\-\s\/](?:([A-Za-z]{3,9})|(\d{1,2}))[\-\s\/]?(\d{2,4})?$/)
+    if(m){
+      const day = parseInt(m[1],10)
+      let monPart = m[2] || m[3]
+      let yearPart = m[4]
+      let month = 0
+      if(monPart){
+        const key = monPart.toString().toLowerCase()
+        if(mnames.hasOwnProperty(key)) month = mnames[key]
+        else month = parseInt(monPart,10)-1
+      }
+      let year = (yearPart ? parseInt(yearPart,10) : null)
+      if(year !== null){
+        if(year < 100) year += (year >= 70 ? 1900 : 2000)
+      } else {
+        // if year missing, assume current year
+        const now = new Date()
+        year = now.getFullYear()
+      }
+      const dd = new Date(year, month, day)
+      if(!isNaN(dd)) return dd
+    }
+    // try dd/mm/yy or dd/mm/yyyy
+    const m2 = raw.match(/^(\d{1,2})[\/](\d{1,2})[\/](\d{2,4})$/)
+    if(m2){
+      const day = parseInt(m2[1],10)
+      const month = parseInt(m2[2],10)-1
+      let year = parseInt(m2[3],10)
+      if(year < 100) year += (year >= 70 ? 1900 : 2000)
+      const dd = new Date(year, month, day)
+      if(!isNaN(dd)) return dd
+    }
+  }catch(e){}
+  return null
+}
+
 // --- Server-Sent Events (SSE) for live updates ---
 const sseClients = new Set()
 const seenMessageIds = new Set()
@@ -1067,8 +1114,11 @@ app.get('/api/guests', (req,res)=>{
     final = final.filter(g => {
       try{
         if(g.checkoutDate){
-          const d = new Date(g.checkoutDate)
-          if(!isNaN(d) && d < now) return false
+          const d = parseCheckoutDate(g.checkoutDate)
+          if(d && d < now) return false
+          // fallback: last-resort native parse
+          const d2 = new Date(g.checkoutDate)
+          if(!d && !isNaN(d2) && d2 < now) return false
         }
         if(g.availableIn){
           // try to extract a number of days; if numeric and <= 0, treat as checked-out
